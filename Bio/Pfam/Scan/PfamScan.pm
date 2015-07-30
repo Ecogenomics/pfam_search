@@ -138,14 +138,14 @@ sub search {
     my @params;
     if ( $self->{_cpu} ) {
       @params = (
-        'hmmscan', '--notextw', '--cpu', $self->{_cpu}, @hmmscan_cut_off,
+        'hmmsearch', '--notextw', '--cpu', $self->{_cpu}, @hmmscan_cut_off,
         $self->{_dir} . '/' . $hmmlib,
         $self->{_fasta}
       );
     }
     else {
       @params = (
-        'hmmscan', '--notextw', @hmmscan_cut_off, $self->{_dir} . '/' . $hmmlib,
+        'hmmsearch', '--notextw', @hmmscan_cut_off, $self->{_dir} . '/' . $hmmlib,
         $self->{_fasta}
       );
 
@@ -165,6 +165,8 @@ sub search {
     $self->{_hmmresultIO} = Bio::Pfam::HMM::HMMResultsIO->new;
     $self->{_all_results} = $self->{_hmmresultIO}->parseMultiHMMER3( \*OUT );
     close OUT;
+
+    $self->{_all_results} = $self->_convert_results_search_to_scan($self->{_all_results});
 
     my $err;
     while (<ERR>) {
@@ -523,7 +525,8 @@ sub _build_header {
     '#      query sequence file: ' . $self->{_fasta} . "\n";
 
   unshift @{ $self->{_header} }, <<EOF_license;
-# Copyright (c) 2009 Genome Research Ltd\n# Freely distributed under the GNU 
+# Copyright (c) 2009 Genome Research Ltd
+# Freely distributed under the GNU 
 # General Public License
 #
 # Authors: Jaina Mistry (jm14\@sanger.ac.uk), John Tate (jt6\@sanger.ac.uk), 
@@ -549,13 +552,15 @@ EOF_license
 
   unshift @{ $self->{_header} },
     "# pfam_scan.pl, $v run at " . scalar(localtime) . "\n#\n";
+    
+    
 }
 
 #-------------------------------------------------------------------------------
 
 =head2 _read_fasta
 
-Reads a sequence from the fasta-format file that was specified in the 
+Reads a sequence from the fasta-format file that was specified in the
 parameters.
 
 =cut
@@ -654,7 +659,7 @@ RESULT: foreach my $result ( @{ $self->{_all_results} } ) {
 
 =head2 _read_pfam_data
 
-Reads the Pfam data file ("Pfam-A.scan.dat") and populates the C<accmap>, 
+Reads the Pfam data file ("Pfam-A.scan.dat") and populates the C<accmap>,
 C<nested> and C<clanmap> hashes on the object.
 
 =cut
@@ -712,6 +717,81 @@ sub _read_pfam_data {
     $self->{ '_read_' . $hmmlib } = 1;
   }
 
+}
+
+#-------------------------------------------------------------------------------
+
+=head2 _convert_results_search_to_scan
+
+Converts the search format to the scan format
+
+=cut
+
+sub _convert_results_search_to_scan {
+  my $self  = shift;
+  my $search_results =  shift;
+
+  my $scan_results = {};
+
+  foreach my $search_result (@{$search_results}) {
+
+    foreach my $seq_id (keys %{$search_result->seqs}) {
+
+      my $this_seq_obj = $search_result->seqs->{$seq_id};
+
+      if (! defined($scan_results->{$seq_id})) {
+        my $new_scan_result = Bio::Pfam::HMM::HMMResults->new;
+        $new_scan_result->seqName($this_seq_obj->name);
+        $new_scan_result->description($this_seq_obj->desc);
+        $new_scan_result->program($search_result->program);
+
+        $scan_results->{$seq_id} = $new_scan_result;
+      }
+
+      my $this_scan_result = $scan_results->{$seq_id};
+
+      $this_scan_result->addHMMSeq(
+        Bio::Pfam::HMM::HMMSequence->new({
+          evalue     => $this_seq_obj->evalue,
+          bits       => $this_seq_obj->bits,
+          bias       => $this_seq_obj->bias,
+          exp        => $this_seq_obj->exp,
+          numberHits => $this_seq_obj->numberHits,
+          name       => $search_result->seedName,
+          desc       => $search_result->description
+        })
+      );
+
+      foreach my $search_unit (@{$this_seq_obj->hmmUnits}) {
+        $this_scan_result->addHMMUnit(
+          Bio::Pfam::HMM::HMMUnit->new({
+            name      => $search_result->seedName,
+            domain    => $search_unit->domain,
+            hmmalign  => $search_unit->hmmalign,
+            bits      => $search_unit->bits,
+            bias      => $search_unit->bias,
+            domEvalue => $search_unit->domEvalue,
+            evalue    => $search_unit->evalue,
+            hmmFrom   => $search_unit->hmmFrom,
+            hmmTo     => $search_unit->hmmTo,
+            seqFrom   => $search_unit->seqFrom,
+            seqTo     => $search_unit->seqTo,
+            envFrom   => $search_unit->envFrom,
+            envTo     => $search_unit->envTo,
+            aliAcc    => $search_unit->aliAcc
+          })
+        );
+      }
+
+      $this_scan_result->eof(1);
+
+    }
+  }
+
+  my @ordered_keys = sort {$a <=> $b} keys(%{$scan_results});
+  my @values = @{$scan_results}{@ordered_keys};
+
+  return \@values;
 }
 
 #-------------------------------------------------------------------------------
@@ -822,7 +902,7 @@ sub _parse_sequence {
 =head2 _translate_fasta
 
 Uses the HMMER v2.3.2 progam "translate" to perform a six-frame translation of
-the input sequence. Checks the parameter "-translate". 
+the input sequence. Checks the parameter "-translate".
 
 Accepted arguments are "all" and "orf", where "all" means (from the "translate"
 help text) "translate in full, with stops; no individual ORFs" and "orf" means
@@ -950,7 +1030,7 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 or see the on-line version at http://www.gnu.org/copyleft/gpl.txt
- 
+
 =cut
 
   1;
