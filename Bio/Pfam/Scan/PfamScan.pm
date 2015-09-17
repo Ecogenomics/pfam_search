@@ -788,7 +788,7 @@ sub _convert_results_search_to_scan {
     }
   }
 
-  my @ordered_keys = sort {$a <=> $b} keys(%{$scan_results});
+  my @ordered_keys = sort {$a cmp $b} keys(%{$scan_results});
   my @values = @{$scan_results}{@ordered_keys};
 
   return \@values;
